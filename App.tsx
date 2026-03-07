@@ -1,6 +1,17 @@
-
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  onSnapshot, 
+  query, 
+  orderBy,
+  setDoc
+} from 'firebase/firestore';
+import { db } from './firebase';
 
 // --- TYPES ---
 export type ActiveScreen = 'home' | 'menu' | 'links' | 'about' | 'user_management' | 'history' | 'profile';
@@ -676,26 +687,71 @@ const AuthContainer: React.FC<{ users: User[]; onLogin: (user: User) => void; on
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('rgo_users');
-    return saved ? JSON.parse(saved) : [{ id: 'admin-1', username: 'admin', password: 'password', status: 'approved', role: 'admin' }];
-  });
-  const [incomes, setIncomes] = useState<Income[]>(() => JSON.parse(localStorage.getItem('rgo_incomes') || '[]'));
-  const [expenses, setExpenses] = useState<Expense[]>(() => JSON.parse(localStorage.getItem('rgo_expenses') || '[]'));
-  const [dues, setDues] = useState<Dues[]>(() => JSON.parse(localStorage.getItem('rgo_dues') || '[]'));
-  const [attendances, setAttendances] = useState<Attendance[]>(() => JSON.parse(localStorage.getItem('rgo_attendances') || '[]'));
-  const [links, setLinks] = useState<LinkItem[]>(() => JSON.parse(localStorage.getItem('rgo_links') || '[]'));
+  const [users, setUsers] = useState<User[]>([]);
+  const [incomes, setIncomes] = useState<Income[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [dues, setDues] = useState<Dues[]>([]);
+  const [attendances, setAttendances] = useState<Attendance[]>([]);
+  const [links, setLinks] = useState<LinkItem[]>([]);
 
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>('home');
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [headerTitle, setHeaderTitle] = useState('ড্যাশবোর্ড');
 
-  useEffect(() => localStorage.setItem('rgo_users', JSON.stringify(users)), [users]);
-  useEffect(() => localStorage.setItem('rgo_incomes', JSON.stringify(incomes)), [incomes]);
-  useEffect(() => localStorage.setItem('rgo_expenses', JSON.stringify(expenses)), [expenses]);
-  useEffect(() => localStorage.setItem('rgo_dues', JSON.stringify(dues)), [dues]);
-  useEffect(() => localStorage.setItem('rgo_attendances', JSON.stringify(attendances)), [attendances]);
-  useEffect(() => localStorage.setItem('rgo_links', JSON.stringify(links)), [links]);
+  // Firebase Real-time Listeners
+  useEffect(() => {
+    const q = query(collection(db, 'users'));
+    return onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      if (data.length === 0) {
+        // Bootstrap admin if no users exist
+        const adminId = 'admin-1';
+        setDoc(doc(db, 'users', adminId), { 
+          id: adminId, 
+          username: 'admin', 
+          password: 'password', 
+          status: 'approved', 
+          role: 'admin' 
+        });
+      }
+      setUsers(data);
+    });
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'incomes'), orderBy('date', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      setIncomes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Income)));
+    });
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'expenses'), orderBy('date', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      setExpenses(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Expense)));
+    });
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'dues'), orderBy('date', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      setDues(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Dues)));
+    });
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'attendances'), orderBy('date', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      setAttendances(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Attendance)));
+    });
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'links'));
+    return onSnapshot(q, (snapshot) => {
+      setLinks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LinkItem)));
+    });
+  }, []);
 
   // Role-based data filtering
   const filteredData = useMemo(() => {
@@ -730,22 +786,30 @@ const App: React.FC = () => {
     }
   }, [activeScreen]);
 
-  const handleAddTransaction = useCallback((type: TransactionType, data: any) => {
+  const handleAddTransaction = useCallback(async (type: TransactionType, data: any) => {
     if (!currentUser) return;
-    const newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-    const entryData = { ...data, id: newId, enteredBy: currentUser.username, date: new Date().toISOString() };
+    const entryData = { ...data, enteredBy: currentUser.username, date: new Date().toISOString() };
 
-    switch (type) {
-      case 'income': setIncomes(prev => [entryData, ...prev]); break;
-      case 'expense': setExpenses(prev => [entryData, ...prev]); break;
-      case 'dues': setDues(prev => [entryData, ...prev]); break;
-      case 'attendance': setAttendances(prev => [entryData, ...prev]); break;
+    try {
+      switch (type) {
+        case 'income': await addDoc(collection(db, 'incomes'), entryData); break;
+        case 'expense': await addDoc(collection(db, 'expenses'), entryData); break;
+        case 'dues': await addDoc(collection(db, 'dues'), { ...entryData, status: 'unpaid' }); break;
+        case 'attendance': await addDoc(collection(db, 'attendances'), entryData); break;
+      }
+    } catch (error) {
+      console.error("Error adding transaction: ", error);
+      alert("তথ্য জমা দিতে সমস্যা হয়েছে।");
     }
   }, [currentUser]);
 
-  const handleUpdateStatus = (type: TransactionType, id: string, status: string) => {
+  const handleUpdateStatus = async (type: TransactionType, id: string, status: string) => {
     if (type === 'dues') {
-      setDues(prev => prev.map(d => d.id === id ? { ...d, status: status as 'paid' | 'unpaid' } : d));
+      try {
+        await updateDoc(doc(db, 'dues', id), { status });
+      } catch (error) {
+        console.error("Error updating status: ", error);
+      }
     }
   };
 
@@ -779,7 +843,13 @@ const App: React.FC = () => {
   };
 
   if (!currentUser) {
-    return <AuthContainer users={users} onLogin={setCurrentUser} onRegister={(u) => setUsers(prev => [...prev, u])} />;
+    return <AuthContainer users={users} onLogin={setCurrentUser} onRegister={async (u) => {
+      try {
+        await setDoc(doc(db, 'users', u.id), u);
+      } catch (error) {
+        console.error("Error registering user: ", error);
+      }
+    }} />;
   }
 
   const renderScreen = () => {
@@ -787,10 +857,28 @@ const App: React.FC = () => {
     switch (activeScreen) {
       case 'home': return <HomeScreen totals={totals} incomes={filteredData.incomes} expenses={filteredData.expenses} currentUser={currentUser} onProfileClick={() => setActiveScreen('profile')} />;
       case 'menu': return <MenuScreen onAddTransaction={handleAddTransaction} currentUser={currentUser} />;
-      case 'links': return <LinksScreen links={links} onAddLink={(l) => setLinks(prev => [...prev, { id: Date.now().toString(), title: l.title || '', url: l.url || '' }])} isAdmin={isAdmin} />;
+      case 'links': return <LinksScreen links={links} onAddLink={async (l) => {
+        try {
+          await addDoc(collection(db, 'links'), { title: l.title || '', url: l.url || '' });
+        } catch (error) {
+          console.error("Error adding link: ", error);
+        }
+      }} isAdmin={isAdmin} />;
       case 'about': return <AboutScreen onBackup={handleBackup} onRestore={handleRestore} isAdmin={isAdmin} />;
       case 'history': return <HistoryScreen incomes={filteredData.incomes} expenses={filteredData.expenses} dues={filteredData.dues} attendances={filteredData.attendances} isAdmin={isAdmin} currentUser={currentUser} onUpdateStatus={handleUpdateStatus} />;
-      case 'user_management': return isAdmin ? <UserManagementScreen users={users} onUpdateUser={(id, updates) => setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u))} onDeleteUser={(id) => setUsers(prev => prev.filter(u => u.id !== id))} /> : null;
+      case 'user_management': return isAdmin ? <UserManagementScreen users={users} onUpdateUser={async (id, updates) => {
+        try {
+          await updateDoc(doc(db, 'users', id), updates);
+        } catch (error) {
+          console.error("Error updating user: ", error);
+        }
+      }} onDeleteUser={async (id) => {
+        try {
+          await deleteDoc(doc(db, 'users', id));
+        } catch (error) {
+          console.error("Error deleting user: ", error);
+        }
+      }} /> : null;
       case 'profile': return <ProfileScreen user={currentUser} incomes={incomes} expenses={expenses} attendances={attendances} dues={dues} />;
       default: return null;
     }
