@@ -1,0 +1,53 @@
+
+<!DOCTYPE html>
+<html lang="bn">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RGO App" />
+    <meta name="description" content="RGO Organization Management System" />
+    
+    <!-- Link to Manifest -->
+    <link rel="manifest" href="manifest.json" />
+    
+    <!-- App Icon for Mobile -->
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3135/3135715.png" />
+    
+    <title>RGO - ড্যাশবোর্ড</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+    <div id="root">
+      <div id="loading-fallback" class="min-h-screen flex flex-col items-center justify-center p-6 text-center space-y-6">
+        <div class="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <div class="space-y-2">
+          <h2 class="text-2xl font-bold text-gray-800 dark:text-white">অ্যাপটি লোড হচ্ছে...</h2>
+          <p class="text-gray-500 dark:text-gray-400">যদি লোড হতে দেরি হয়, তবে নিচের বাটনে ক্লিক করুন।</p>
+        </div>
+        <button 
+          onclick="window.open(window.location.href, '_blank')"
+          class="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-xl transition-all active:scale-95"
+        >
+          নতুন ট্যাবে ওপেন করুন
+        </button>
+      </div>
+    </div>
+    <script type="module" src="./index.tsx"></script>
+    <script>
+      console.log('Is Iframe:', window.self !== window.top);
+      // Hide fallback once React mounts
+      const observer = new MutationObserver((mutations) => {
+        const fallback = document.getElementById('loading-fallback');
+        if (fallback && document.getElementById('root').children.length > 1) {
+          fallback.style.display = 'none';
+          observer.disconnect();
+        }
+      });
+      observer.observe(document.getElementById('root'), { childList: true });
+    </script>
+  </body>
+</html>
